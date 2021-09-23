@@ -309,6 +309,12 @@ class BaseUrlChallengeResponseAuthSession(BaseUrlSession):
         """Current authentication token if exists. None if it wasn't fetched yet."""
         return getattr(self.client, "authentication_token", None)
 
+    @property
+    def decoded_access_token(self):
+        """Current decoded authentication token if exists. None if it wasn't fetched yet."""
+        return base64.b64decode(getattr(self.client, "authentication_token", None))
+
+
     @access_token.setter
     def access_token(self, value):
         self.client.authentication_token = value
