@@ -1,3 +1,10 @@
+
+
+
+SEE LEDSIGN_README.txt
+
+
+
 ===============================================================
 XLED - unofficial control Twinkly - Smart Decoration LED lights
 ===============================================================
