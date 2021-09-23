@@ -59,12 +59,19 @@ class ChallengeResponseAuth(AuthBase):
         expected = xled.security.make_challenge_response(
             self.challenge, self.hw_address
         )
+
         if expected != self.challenge_response:
             msg = (
-                "validate_challenge_response(): login sent "
+                "Generation 1 validate_challenge_response(): login sent "
                 "challenge-response: %r. But %r was expected."
             )
-            log.error(msg, self.challenge_response, expected)
+            log.warning(msg, self.challenge_response, expected)
+        elif self._challenge != self._challenge_response:
+            msg = (
+                "Generation 2 validate_challenge_response(): login sent "
+                "challenge-response: %r. But %r was expected."
+            )
+            log.error(msg, self._challenge_response, self._challenge)
             return False
         msg = "validate_challenge_response(): challenge-response is correct."
         log.debug(msg)
@@ -402,10 +409,17 @@ class ValidatingClientMixin(object):
         expected = xled.security.make_challenge_response(self._challenge, hw_address)
         if expected != self._challenge_response:
             msg = (
-                "challenge-response invalid. "
+                "Generation 1 challenge-response invalid. "
                 "Received challenge-response: %r but %r was expected."
             )
-            log.error(msg, self._challenge_response, expected)
+            log.warning(msg, self._challenge_response, expected)
+            #raise ValidationError()
+        elif self._challenge != self._challenge_response:
+            msg = (
+                "Generation 2 challenge-response invalid. "
+                "Received challenge-response: %r but %r was expected."
+            )
+            log.error(msg, self._challenge_response, self._challenge)
             raise ValidationError()
 
         msg = "challenge-response is correct."
