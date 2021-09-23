@@ -3,9 +3,13 @@
 """Console script for xled."""
 
 from __future__ import absolute_import
+from PIL import Image
+from PIL import GifImagePlugin
 
 import logging
 import time
+import socket
+import csv
 
 import click
 import click_log
@@ -60,6 +64,7 @@ def validate_time(ctx, param, value):
     metavar="DEVICE_NAME",
     help="Name of the device to operate on. Mutually exclusive with --hostname.",
 )
+
 @click.option(
     "--hostname",
     metavar="ADDRESS",
@@ -85,6 +90,7 @@ def validate_time(ctx, param, value):
     "--verbosity-auth",
     help="Sets verbosity of auth module. Either CRITICAL, ERROR, WARNING, INFO or DEBUG",
 )
+
 def main(ctx, name, hostname):
     if name and hostname:
         raise click.BadParameter("Either name or hostname can be set not both.")
@@ -116,6 +122,124 @@ def turn_off(ctx):
     control_interface.turn_off()
     click.echo("Turned off.")
 
+@main.command(name="realtime", help="Turns realtime on.")
+@click.option(
+    '-g',
+    '--gif',
+    metavar="GIF_PATH",
+    help="gif file to feed --gif.",
+)
+@click.pass_context
+def realtime(ctx, gif):
+    control_interface = common_preamble(ctx.obj.get("name"), ctx.obj.get("hostname"))
+    log.debug("Get device info...")
+    response = control_interface.get_device_info()
+    number_of_led = response["number_of_led"]
+    led_profile = response["led_profile"]
+    bytes_per_led = len(led_profile);
+    max_frame = (bytes_per_led*number_of_led)
+    click.echo("LED profile: {}".format(led_profile))
+    click.echo("Format: {}".format(number_of_led))
+    click.echo("Bytes per LED: {}".format(bytes_per_led))
+    click.echo("Max Frame Size: {}".format(max_frame))
+    click.echo("Max Packet Size: {}".format(max_frame+10))
+    log.debug("Loading xled.map");
+    map = []
+
+
+    #Create a database from a csv. each cell has the led number.
+    #I have a 15x15 grid for a 250 string, some ommited
+    with open("./xled.map") as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            map.append(row)
+
+    map_width = len(map[0]);
+    map_height = len(map);
+    click.echo("Map Width: {}".format(map_width))
+    click.echo("Map Height: {}".format(map_height))
+
+    image = Image.open(gif)
+
+    log.debug("Turning realtime on...")
+    control_interface.realtime()
+    click.echo("Realtime turned on. Send packets to {}:7777".format(control_interface.host))
+    click.echo("Authentication Token: {} / {}".format(
+        control_interface._session.access_token,
+        control_interface._session.decoded_access_token.hex()))
+    click.echo("Open UDP Socket.")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # UDP
+
+    try:
+        frames = image.n_frames
+    except:
+        frames = 1
+    click.echo("Frames: {}".format(frames))
+    click.echo("File: {}".format(gif))
+    while frames > 0:
+        #for each frame in the gif
+        for frame in range(0,frames):
+            #click.echo("Seek to Frame: {}".format(frame))
+
+            #seek to the frame
+            image.seek(frame)
+            #resize to the map
+            #click.echo("Resize Frame: {}".format(frame))
+
+            resized_im = image.resize((map_width, map_height)).convert('RGBA')
+
+            #loop over the map
+            showframe = []
+
+            for y in range(0, map_height):
+                row = []
+                for x in range(0, map_width):
+                    row.append(resized_im.getpixel((x,y)))
+
+                showframe.append(row)
+
+            #print(showframe)
+            #click.echo("Create packet: {}".format(frame))
+
+            #create a new packet
+            packet = bytearray(b'\x01')
+            #Add the access token
+            packet.extend(control_interface._session.decoded_access_token)
+            #Add the total leds
+            packet.append(bytes_per_led)
+
+            for led in range(1, number_of_led+1):
+                found = 0
+                #look for the led number in the map.
+                for row in range(0,map_height):
+                    #print(row)
+                    for col in range(0,map_width):
+                        #click.echo("Search Row {} and Col {} - {} ==  {} ".format(row,col,map[row][col],led))
+                        if( int(map[row][col]) == led ):
+                            #print("pixel found in map")
+                            #print(showframe[row][col])
+                            #for v in showframe[row][col]:
+                            if(showframe[row][col][3]>0):
+                                packet.append(showframe[row][col][0])
+                                packet.append(showframe[row][col][1])
+                                packet.append(showframe[row][col][2])
+                            else:
+                                packet.append(0)
+                                packet.append(0)
+                                packet.append(0)
+                            found = 1
+                if( found == 0 ):
+                    packet.append(0)
+                    packet.append(0)
+                    packet.append(0)
+
+            #click.echo("Send Packet: {}".format(frame))
+            sock.sendto( packet, (control_interface.host, 7777))
+            #print(image.info['duration'])
+            try:
+                time.sleep(image.info['duration']/1000)
+            except:
+                time.sleep(0.1)
 
 @main.command(name="get-timer", help="Gets current timer settings.")
 @click.pass_context
